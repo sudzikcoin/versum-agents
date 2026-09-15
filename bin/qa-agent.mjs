@@ -47,7 +47,7 @@ function targetUrls(task, slice) {
 /** Shape the checklist output to the task's output_spec. */
 function shapeResult(task, run) {
   const kind = task.output_spec?.kind ?? 'structured'
-  if (kind === 'structured') return { kind, payload: { steps: run.steps.map((s) => ({ url: s.url, action: s.action, result: s.result, ok: s.ok })), verdict: run.verdict, checked_at: run.checked_at, summary: run.summary } }
+  if (kind === 'structured') return { kind, payload: { steps: run.steps.map((s) => ({ url: s.url, action: s.action, result: s.result, ok: s.ok, ...(s.detail?.length ? { detail: s.detail } : {}) })), verdict: run.verdict, checked_at: run.checked_at, summary: run.summary } }
   if (kind === 'text') return { kind, payload: { text: `${run.summary}. Verdict: ${run.verdict}.\n` + run.steps.map((s) => `${s.ok ? 'PASS' : 'FAIL'} ${s.action} ${s.url}: ${s.result}`).join('\n') } }
   if (kind === 'table') return { kind, payload: { rows: run.steps.map((s) => ({ url: s.url, action: s.action, result: s.result, ok: s.ok })) } }
   if (kind === 'urls') return { kind, payload: { urls: Array.from(new Set(run.steps.map((s) => s.url))) } }
