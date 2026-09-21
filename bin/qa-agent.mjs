@@ -47,7 +47,9 @@ function targetUrls(task, slice) {
 /** Shape the checklist output to the task's output_spec. */
 function shapeResult(task, run) {
   const kind = task.output_spec?.kind ?? 'structured'
-  if (kind === 'structured') return { kind, payload: { steps: run.steps.map((s) => ({ url: s.url, action: s.action, result: s.result, ok: s.ok, ...(s.detail?.length ? { detail: s.detail } : {}) })), verdict: run.verdict, checked_at: run.checked_at, summary: run.summary } }
+  // E6: the images are already uploaded; what travels in the payload is the note that they exist
+  const images = (run.sent ?? []).map((s) => ({ artefact_id: s.artefact_id, url: s.url, caption: s.caption }))
+  if (kind === 'structured') return { kind, payload: { steps: run.steps.map((s) => ({ url: s.url, action: s.action, result: s.result, ok: s.ok, ...(s.detail?.length ? { detail: s.detail } : {}) })), verdict: run.verdict, checked_at: run.checked_at, summary: run.summary, ...(images.length ? { images } : {}) } }
   if (kind === 'text') return { kind, payload: { text: `${run.summary}. Verdict: ${run.verdict}.\n` + run.steps.map((s) => `${s.ok ? 'PASS' : 'FAIL'} ${s.action} ${s.url}: ${s.result}`).join('\n') } }
   if (kind === 'table') return { kind, payload: { rows: run.steps.map((s) => ({ url: s.url, action: s.action, result: s.result, ok: s.ok })) } }
   if (kind === 'urls') return { kind, payload: { urls: Array.from(new Set(run.steps.map((s) => s.url))) } }
@@ -59,15 +61,36 @@ function matches(task) {
   return tags.some((t) => TAGS.includes(t))
 }
 
+/**
+ * E6 — the pictures go up before the deliverable does.
+ *
+ * Each one is its own call, so a refused image (over the cap, too many for one assignment) costs
+ * that image and not the job. What stays in the deliverable is the note that the picture exists.
+ */
+async function sendShots(mcp, slotId, shots) {
+  const sent = []
+  for (const shot of shots) {
+    try {
+      const r = await mcp.submitArtefact(slotId, shot)
+      sent.push({ artefact_id: r.artefact_id, url: shot.url, caption: shot.caption, size_bytes: shot.size_bytes })
+      log(`slot ${slotId}: screenshot of ${shot.url} sent (${(shot.size_bytes / 1024).toFixed(0)} KB)`)
+    } catch (e) {
+      log(`slot ${slotId}: screenshot of ${shot.url} refused — ${e.message}`)
+    }
+  }
+  return sent
+}
+
 async function deliverSlot(mcp, task, slotId) {
   const urls = targetUrls(task)
   if (!urls.length) { log(`slot ${slotId}: no URL in the task input — cannot run the checklist, leaving it`, { task: task.id }); return }
   log(`slot ${slotId}: running checklist`, { urls })
-  const run = await runChecklist(urls, { log: (m) => log(m) })
-  const { kind, payload } = shapeResult(task, run)
+  const run = await runChecklist(urls, { log: (m) => log(m), screenshot: task.input_spec?.screenshot ?? 'full' })
+  const sent = await sendShots(mcp, slotId, run.shots ?? [])
+  const { kind, payload } = shapeResult(task, { ...run, sent })
   try {
     const r = await mcp.submitDeliverable(slotId, kind, payload)
-    log(`slot ${slotId}: submitted → ${r.acceptance}`, { verdict: run.verdict, failed: run.failed })
+    log(`slot ${slotId}: submitted → ${r.acceptance}`, { verdict: run.verdict, failed: run.failed, images: sent.length })
   } catch (e) {
     if (e instanceof LaunchLoopError) log(`slot ${slotId}: refused ${e.code} — ${e.message}`, e.details ? { failures: e.details?.verdict?.failures } : undefined)
     else throw e

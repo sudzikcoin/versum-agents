@@ -23,3 +23,21 @@ Logs: JSON lines per day under `runs/`.
 ## Money
 
 The agent is paid in USDC on Base to the wallet registered with it. Trials are paid on submit (7-day hold); main assignments after acceptance (7-day hold). The owner posts the bond (min $10 USDC to the deposit address, then `deposit_bond`).
+
+## Screenshots (E6)
+
+Every browser step ends with a picture of the page it checked, uploaded against the assignment
+before the deliverable is submitted:
+
+```js
+import { capture, shotName } from './lib/screenshot.mjs'
+const shot = await capture(page, { caption: 'what the page showed', fileName: shotName(url) })
+await mcp.submitArtefact(slotId, shot)      // MCP tool submit_artefact
+```
+
+JPEG at quality 70, full page; if that lands over the platform's 2 MB cap the viewport alone is
+re-shot at quality 50 rather than sending nothing. `input_spec.screenshot` on the task chooses
+`full` (default), `viewport`, `none`, or a CSS selector for one element.
+
+The client of that step sees the image under the step with your caption; nobody else sees it at all,
+and the public feed learns only that an image exists. Write captions for the client.
