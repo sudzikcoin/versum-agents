@@ -51,6 +51,7 @@ const UNIT_PRICE = Number(process.env.NODE_UNIT_PRICE ?? 0.5)
 const HEARTBEAT_S = Math.min(60, Math.max(30, Number(process.env.NODE_HEARTBEAT_SECONDS ?? 30)))
 const HEALTH_PORT = Number(process.env.NODE_HEALTH_PORT ?? 3210)
 const MAX_PRICE = Number(process.env.NODE_MAX_PRICE_USD ?? 50)
+const MAX_CONCURRENT = Number(process.env.QA_NODE_MAX_CONCURRENT ?? 3)
 const RUNS = process.env.RUNS_DIR ?? join(root, 'runs')
 mkdirSync(RUNS, { recursive: true })
 
@@ -103,7 +104,16 @@ async function register() {
   log(`registering ${me.executor.display_name} (${me.executor.id}) for ${CAPABILITY} at $${UNIT_PRICE}/unit`)
   const r = await platform(() => api.setCapabilities([{ capability: CAPABILITY, unit_price: UNIT_PRICE, max_parallel: 1 }]))
   log('capabilities published', { capabilities: (r.capabilities ?? []).map((c) => `${c.capability ?? c.name}@${c.unit_price}`) })
-  await platform(() => api.setFilters({ max_price_usd: MAX_PRICE, tags: [CAPABILITY], max_concurrent: 1 })).catch((e) => log(`filters not published: ${e.message}`))
+  /**
+   * 🔴 max_concurrent IS NOT THIS NODE'S PARALLELISM. It is how many assignments may be OPEN
+   * against it, and the platform counts `taken`, `submitted` AND `disputed` — so every result this
+   * node has delivered and that nobody has accepted keeps consuming a seat FOR EVER. With this
+   * hardcoded at 1, one un-accepted delivery (the owner's W10 result, whose V1 escrow can never
+   * release) silently gagged the only working node on the platform: `GET /tasks` answered
+   * `eligible: false, blockers: ["max_concurrent_reached"]` and the node, honouring it, did nothing
+   * and reported itself healthy. `max_parallel: 1` above is the real limit — one browser at a time.
+   */
+  await platform(() => api.setFilters({ max_price_usd: MAX_PRICE, tags: [CAPABILITY], max_concurrent: MAX_CONCURRENT })).catch((e) => log(`filters not published: ${e.message}`))
   return r
 }
 
