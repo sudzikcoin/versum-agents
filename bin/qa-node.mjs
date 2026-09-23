@@ -148,8 +148,11 @@ async function runAssignment(slot, task) {
     }
     const result = await runSiteQa(target, { report, shoot: shooter(slotId), log })
     const { kind, payload } = deliverableFrom(result, task.output_spec)
-    log(`slot ${slotId}: ${payload.rows.length} defect(s), submitting`)
-    const r = await platform(() => api.submit(slotId, kind, payload))
+    // W12 — what WE did, reported by us. On a per-service task the platform ignores it and pays
+    // the agreed price; on a metered one it is what gets billed, capped at what the client allowed.
+    const billedUnits = task.billing?.report_units ? (result.passes ?? null) : null
+    log(`slot ${slotId}: ${payload.rows.length} defect(s)${billedUnits != null ? `, billing ${billedUnits} unit(s)` : ''}, submitting`)
+    const r = await platform(() => api.submit(slotId, kind, payload, billedUnits))
     // THE RUN IS ONLY OVER ONCE THE PLATFORM HAS THE WORK. Saying "done" before the submit lands is
     // exactly the four-second lie: the node felt finished and the client had nothing.
     await api.progress(slotId, { pass: 6, of: 6, title: 'Обход ссылок, ошибки консоли и сети', state: 'done', run_state: 'done', defects: 0 }).catch(() => {})
